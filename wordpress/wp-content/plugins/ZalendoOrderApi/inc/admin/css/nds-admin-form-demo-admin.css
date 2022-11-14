@@ -1,0 +1,78 @@
+/**
+ * All of the CSS for your admin-specific functionality should be included in this file.
+ *
+ * The file is enqueued from inc/admin/class-admin.php.
+ */
+button.edit.button.button-primary,
+button.delete.button.button-link-delete{
+	margin:0 5px;
+}
+.custom-notice-error,.custom-notice-success,td.status{
+	text-transform: capitalize;
+}
+.custom-notice-error,.custom-notice-success {
+    padding: 10px;
+    font-size: 18px;
+}
+.custom-notice-error{
+	border: 1px solid #f00;
+}
+.custom-notice-success{
+	border: 1px solid #00FF00;
+}
+td.approved{
+	color:#00FF00;
+}
+td.fulfilled,td.initial{
+	color:#f00;
+}
+.tablenav-pages .page-numbers{
+	color: #2271b1;
+    border-color: #2271b1;
+    background: #f6f7f7;
+    padding: 4px 10px;
+    display: inline-block;
+    vertical-align: middle;
+    border: 1px solid;
+    text-align: center;
+    margin: 5px;
+}
+.nds_add_user_meta_form td a.order-preview{
+	position:relative;
+	font-size:0;
+    box-shadow: none;
+}
+.nds_add_user_meta_form td a.order-preview::before{
+	font-family: WooCommerce;
+    speak: never;
+    font-weight: 400;
+    font-variant: normal;
+    text-transform: none;
+    line-height: 1;
+    margin: 0;
+    text-indent: 0;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    text-align: center;
+    content: "\e010";
+    line-height: 16px;
+    font-size: 14px;
+    vertical-align: middle;
+    top: 0px;
+}
+a.button.refresh_token,a.button.refresh_token:hover {
+    background-color: #f00;
+    color: #fff;
+    border: #f00;
+}
+@media print {
+	#adminmenumain{
+		display:none;
+	}
+	#wpcontent{
+		margin-left:0;
+	}
+}

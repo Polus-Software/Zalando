@@ -1,0 +1,59 @@
+
+<div class="wrap">
+<?php
+/**
+ * The form to be loaded on the plugin's admin page
+ */
+	if( current_user_can( 'edit_users' ) ) {		
+		
+		// Generate a custom nonce value.
+		$zalendo_add_meta_nonce = wp_create_nonce( 'zalendo_add_user_meta_form_nonce' ); 
+		$plugin_uri = admin_url('admin.php?page='. $this->plugin_name);
+		$redirect_uri = $plugin_uri.'-settings';
+		$order_uri = $plugin_uri.'-sync';
+		// Build the Form
+?>			
+		<h1 class="wp-heading-inline"><?php _e( 'Choose a client to proceed', $this->plugin_name ); ?></h1>	
+		<hr class="wp-header-end"><br>
+		<div class="nds_add_user_meta_form">
+			<table class="wp-list-table widefat fixed striped table-view-list posts" role="presentation">
+				<thead>
+					<tr>
+						<th>Client ID</th>
+						<th>Actions</th>
+					</tr>
+				</thead>
+				<tbody>
+					<?php
+					if($result){
+						foreach($result as $r){
+							echo '<tr id="client_'.$r->id.'">';
+							echo '<td>'.$r->client_id.'</td>';
+							echo '<td>';
+							if($r->token != ''){
+								echo '<a href="'.$order_uri.'&client_id='.$r->id.'" class="button button-primary">Start Syncing</a>';
+							}
+							echo '</td>';
+							echo '</tr>';
+						}
+					}
+					else{ ?>
+						<tr>
+							<td colspan="2">No Data to display</td>
+						</tr>
+					<?php
+					}
+					?>
+				</tbody>
+			</table>
+			<div id="nds_form_feedback"></div>
+		</div>
+	<?php    
+	}
+	else {  
+	?>
+		<p> <?php __("You are not authorized to perform this operation.", $this->plugin_name) ?> </p>
+	<?php   
+	}
+?>
+</div>
