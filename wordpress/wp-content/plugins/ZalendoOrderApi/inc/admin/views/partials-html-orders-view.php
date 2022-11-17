@@ -1,0 +1,93 @@
+
+<div class="wrap">
+<?php
+/**
+ * The form to be loaded on the plugin's admin page
+ */
+	if( current_user_can( 'edit_users' ) ) {		
+		$protocol = is_ssl() ? 'https://' : 'http://';
+		$current_url = $protocol.$_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
+		// Generate a custom nonce value.
+		$zalendo_add_meta_nonce = wp_create_nonce( 'zalendo_add_user_meta_form_nonce' ); 
+		$plugin_uri = admin_url('admin.php?page='. $this->plugin_name);
+		$redirect_uri = $plugin_uri.'-settings';
+		$order_uri = $plugin_uri.'&orderdetail=true&client_id='.$_GET['client_id'];
+		// Build the Form
+?>			
+		<h1 class="wp-heading-inline"><?php _e( 'Orders', $this->plugin_name ); ?></h1>	
+		<hr class="wp-header-end"><br>
+		<div class="nds_add_user_meta_form">
+			<table class="wp-list-table widefat fixed striped table-view-list posts" role="presentation">
+				<thead>
+					<tr>
+						<th>Order ID</th>
+						<th>Order Number</th>
+						<th>Customer email</th>
+						<th>Status</th>
+						<th>Actions</th>
+					</tr>
+				</thead>
+				<tbody>
+					<?php
+					if($orders){
+						foreach($orders as $order){
+							$order_id = $order->ID;
+							$order = wc_get_order( $order_id );
+							$billing_first_name = $order->get_billing_first_name();
+							$billing_last_name  = $order->get_billing_last_name();
+							$zalando_order_id = get_post_meta( $order_id, 'order_zalando_id', true);
+							$zalando_order_number = get_post_meta( $order_id, 'order_number', true);
+							$zalando_order_status = get_post_meta( $order_id, 'order_zalando_status', true);
+							$billing_email  = $order->get_billing_email();							
+							echo '<tr>';
+							echo '<td>#'.$order_id.' '.$billing_first_name.' '.$billing_last_name.'</td>';
+							echo '<td>'.$zalando_order_number.'</td>';
+							echo '<td>'.$billing_email.'</td>';
+							echo '<td class="status '.$zalando_order_status.'">'.$zalando_order_status.'</td>';
+							echo '<td><a href="'.$order_uri.'&order_id='.$order_id.'" class="order-preview" data-order-id="'.$order_id.'" title="Preview">Preview</a></td>';
+							echo '</tr>';
+						}
+					}
+					else{
+						echo '<td colspan=5>No Orders to show</td>';
+					}
+					?>
+				</tbody>
+			</table>
+			<?php
+			if($orders){ ?>
+				<div class="tablenav bottom">
+					<div class="tablenav-pages">
+						<span class="displaying-num"><?php echo $total_records; ?> items</span>
+						<?php 
+						$args = array(
+							'base' => '%_%',
+							'format' => '?number=%#%',
+							'total' => $total_pages,
+							'current' => $paged,
+							'show_all' => False,
+							'end_size' => 5,
+							'mid_size' => 5,
+							'prev_next' => True,
+							'prev_text' => __('&laquo; Previous'),
+							'next_text' => __('Next &raquo;'),
+							'type' => 'plain',
+							'add_args' => False,
+							'add_fragment' => ''
+						);
+						echo paginate_links($args); ?>
+					</div>
+					<br class="clear">
+				</div>
+			<?php } ?>
+			<div id="nds_form_feedback"></div>
+		</div>
+	<?php    
+	}
+	else {  
+	?>
+		<p> <?php __("You are not authorized to perform this operation.", $this->plugin_name) ?> </p>
+	<?php   
+	}
+?>
+</div>

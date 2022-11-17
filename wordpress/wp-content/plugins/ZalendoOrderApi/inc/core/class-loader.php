@@ -1,0 +1,170 @@
+<?php
+
+namespace Zalendo_Admin_Order_Api\Inc\Core;
+
+/**
+ * Register all actions and filters for the plugin
+ *
+ * @link       https://www.nuancedesignstudio.in
+ * @since      1.0.0
+ *
+ * @author     Karan NA Gupta
+ */
+
+/**
+ * Register all actions and filters for the plugin.
+ *
+ * Maintain a list of all hooks that are registered throughout
+ * the plugin, and register them with the WordPress API. Call the
+ * run function to execute the list of actions and filters.
+ */
+class Loader {
+
+	/**
+	 * The array of actions registered with WordPress.
+	 *
+	 * @var      array    $actions    The actions registered with WordPress to fire when the plugin loads.
+	 */
+	protected $actions;
+
+	/**
+	 * The array of filters registered with WordPress.
+	 *
+	 * @var      array    $filters    The filters registered with WordPress to fire when the plugin loads.
+	 */
+	protected $filters;
+
+	/**
+	 * Initialize the collections used to maintain the actions and filters.
+	 */
+	public function __construct() {
+
+		$this->actions = array();
+		$this->filters = array();
+
+	}
+
+	/**
+	 * Add a new action to the collection to be registered with WordPress.
+	 *
+	 * @since    1.0.0
+	 * @param    string $hook             The name of the WordPress action that is being registered.
+	 * @param    object $component        A reference to the instance of the object on which the action is defined.
+	 * @param    string $callback         The name of the function definition on the $component.
+	 * @param    int    $priority         Optional. he priority at which the function should be fired. Default is 10.
+	 * @param    int    $accepted_args    Optional. The number of arguments that should be passed to the $callback. Default is 1.
+	 */
+	public function add_action( $hook, $component, $callback, $priority = 10, $accepted_args = 1 ) {
+		$this->actions = $this->add( $this->actions, $hook, $component, $callback, $priority, $accepted_args );
+	}
+
+	/**
+	 * Add a new filter to the collection to be registered with WordPress.
+	 *
+	 * @since    1.0.0
+	 * @param    string $hook             The name of the WordPress filter that is being registered.
+	 * @param    object $component        A reference to the instance of the object on which the filter is defined.
+	 * @param    string $callback         The name of the function definition on the $component.
+	 * @param    int    $priority         Optional. he priority at which the function should be fired. Default is 10.
+	 * @param    int    $accepted_args    Optional. The number of arguments that should be passed to the $callback. Default is 1
+	 */
+	public function add_filter( $hook, $component, $callback, $priority = 10, $accepted_args = 1 ) {
+		$this->filters = $this->add( $this->filters, $hook, $component, $callback, $priority, $accepted_args );
+	}
+
+	/**
+	 * A utility function that is used to register the actions and hooks into a single
+	 * collection.
+	 *
+	 * @since    1.0.0
+	 * @access   private
+	 * @param    array  $hooks            The collection of hooks that is being registered (that is, actions or filters).
+	 * @param    string $hook             The name of the WordPress filter that is being registered.
+	 * @param    object $component        A reference to the instance of the object on which the filter is defined.
+	 * @param    string $callback         The name of the function definition on the $component.
+	 * @param    int    $priority         The priority at which the function should be fired.
+	 * @param    int    $accepted_args    The number of arguments that should be passed to the $callback.
+	 * @return   array                                  The collection of actions and filters registered with WordPress.
+	 */
+	private function add( $hooks, $hook, $component, $callback, $priority, $accepted_args ) {
+
+		$hooks[] = array(
+			'hook'          => $hook,
+			'component'     => $component,
+			'callback'      => $callback,
+			'priority'      => $priority,
+			'accepted_args' => $accepted_args,
+		);
+
+		return $hooks;
+
+	}
+
+	/**
+	 * Register the filters and actions with WordPress.
+	 *
+	 * @since    1.0.0
+	 */
+	public function run() {
+		foreach ( $this->filters as $hook ) {
+			add_filter( $hook['hook'], array( $hook['component'], $hook['callback'] ), $hook['priority'], $hook['accepted_args'] );
+		}
+
+		foreach ( $this->actions as $hook ) {
+			add_action( $hook['hook'], array( $hook['component'], $hook['callback'] ), $hook['priority'], $hook['accepted_args'] );
+		}
+		if (! wp_next_scheduled ( 'Zalando_Token_Update')) {
+			wp_schedule_event(time(), 'every_2_hours', 'Zalando_Token_Update');
+		}
+		add_action( 'Zalando_Token_Update', array( $this, 'do_this_hourly') );
+	}
+	public function do_this_hourly() {
+		// do something every hour
+		//wp_mail( 'jibi.b@polussoftware.com', 'Automatic email', 'Automatic scheduled email from WordPress to test cron');
+		global $wpdb;
+		$tablename = $wpdb->prefix.'zalendo_credentials';
+				
+					
+		$result = $wpdb->get_results("SELECT * FROM ".$tablename);
+		if($result){
+			$adate=current_time('mysql', 1);
+			foreach($result as $r){
+				if($adate>=$r->expires_in_time){
+					$client_id = $r->id;
+					$curl = curl_init();
+
+					curl_setopt_array($curl, array(
+					  CURLOPT_URL => 'https://api-sandbox.merchants.zalando.com/auth/token',
+					  CURLOPT_RETURNTRANSFER => true,
+					  CURLOPT_ENCODING => '',
+					  CURLOPT_MAXREDIRS => 10,
+					  CURLOPT_TIMEOUT => 0,
+					  CURLOPT_FOLLOWLOCATION => true,
+					  CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+					  CURLOPT_CUSTOMREQUEST => 'POST',
+					  CURLOPT_POSTFIELDS => 'client_id='.$r->client_id.'&client_secret='.$r->client_secret.'&grant_type=client_credentials&scope=access_token_only',
+					  CURLOPT_HTTPHEADER => array(
+						'Content-Type: application/x-www-form-urlencoded'
+					  ),
+					));
+
+					$response = curl_exec($curl);
+					$result = json_decode($response,true);
+					curl_close($curl);
+					$adate=current_time('mysql', 1);
+					$dateinsec=strtotime($adate);
+					$newdate=$dateinsec+($result['expires_in']);
+					$data_update = array(
+									'token'=>isset($result['access_token'])?$result['access_token']:'',
+									'expires_in'=>isset($result['expires_in'])?$result['expires_in']:'',
+									'expires_in_time'=>date('Y-m-d H:i:s',$newdate),
+								);
+					$data_where = array('id' => $client_id);
+					$response = $wpdb->update($tablename , $data_update, $data_where);
+					//return $response;
+				}
+			}
+		}
+	}
+
+}

@@ -1,0 +1,745 @@
+<?php
+
+namespace Zalendo_Admin_Order_Api\Inc\Admin;
+
+/**
+ * The admin-specific functionality of the plugin.
+ *
+ * Defines the plugin name, version, and two examples hooks for how to
+ * enqueue the admin-specific stylesheet and JavaScript.
+ *
+ * @link       https://www.nuancedesignstudio.in
+ * @since      1.0.0
+ *
+ * @author    Karan NA Gupta
+ */
+class Admin {
+
+	/**
+	 * The ID of this plugin.
+	 *
+	 * @since    1.0.0
+	 * @access   private
+	 * @var      string    $plugin_name    The ID of this plugin.
+	 */
+	private $plugin_name;
+
+	/**
+	 * The version of this plugin.
+	 *
+	 * @since    1.0.0
+	 * @access   private
+	 * @var      string    $version    The current version of this plugin.
+	 */
+	private $version;
+	
+	/**
+	 * The text domain of this plugin.
+	 *
+	 * @since    1.0.0
+	 * @access   private
+	 * @var      string    $plugin_text_domain    The text domain of this plugin.
+	 */
+	private $plugin_text_domain;
+
+	/**
+	 * Initialize the class and set its properties.
+	 *
+	 * @since    1.0.0
+	 * @param    string $plugin_name	The name of this plugin.
+	 * @param    string $version	The version of this plugin.
+	 * @param	 string $plugin_text_domain	The text domain of this plugin
+	 */
+	public function __construct( $plugin_name, $version, $plugin_text_domain ) {
+
+		$this->plugin_name = $plugin_name;
+		$this->version = $version;
+		$this->plugin_text_domain = $plugin_text_domain;
+
+	}
+
+	/**
+	 * Register the stylesheets for the admin area.
+	 *
+	 * @since    1.0.0
+	 */
+	public function enqueue_styles() {
+
+		wp_enqueue_style( $this->plugin_name, plugin_dir_url( __FILE__ ) . 'css/nds-admin-form-demo-admin.css', array(), $this->version, 'all' );
+
+	}
+
+	/**
+	 * Register the JavaScript for the admin area.
+	 *
+	 * @since    1.0.0
+	 */
+	public function enqueue_scripts() {
+		
+		$params = array ( 'ajaxurl' => admin_url( 'admin-ajax.php' ) );
+		wp_enqueue_script( 'nds_ajax_handle', plugin_dir_url( __FILE__ ) . 'js/zalendo-admin-form-handler.js', array( 'jquery' ), $this->version, false );				
+		wp_localize_script( 'nds_ajax_handle', 'params', $params );		
+
+	}
+	
+	/**
+	 * Callback for the admin menu
+	 * 
+	 * @since    1.0.0
+	 */
+	public function add_plugin_admin_menu() {
+		add_menu_page(	__( 'Zalando Plugin', $this->plugin_text_domain ), //page title
+						__( 'Zalando Plugin', $this->plugin_text_domain ), //menu title
+						'manage_options', //capability
+						$this->plugin_name //menu_slug
+					);
+		// Add a submenu page and save the returned hook suffix.
+		$html_form_page_hook1 = add_submenu_page( 
+									$this->plugin_name, //parent slug
+									__( 'Zalando Orders', $this->plugin_text_domain ), //page title
+									__( 'Zalando Orders', $this->plugin_text_domain ), //menu title
+									'manage_options', //capability
+									$this->plugin_name, //menu_slug
+									array( $this, 'zalendo_orders_table' ) //callback for page content
+									);
+		$html_form_page_hook2 = add_submenu_page( 
+									$this->plugin_name, //parent slug
+									__( 'Configure Client', $this->plugin_text_domain ), //page title
+									__( 'Configure Client', $this->plugin_text_domain ), //menu title
+									'manage_options', //capability
+									$this->plugin_name.'-settings', //menu_slug
+									array( $this, 'zalendo_client_table' )
+								);	//callback for page content
+		$html_form_page_hook3 = add_submenu_page( 
+									$this->plugin_name, //parent slug
+									__( 'Sync Orders and Products', $this->plugin_text_domain ), //page title
+									__( 'Sync Orders and Products', $this->plugin_text_domain ), //menu title
+									'manage_options', //capability
+									$this->plugin_name.'-sync', //menu_slug
+									array( $this, 'zalendo_sync' ) //callback for page content
+									);
+		/*$html_form_page_hook3 = add_submenu_page( 
+									$this->plugin_name, //parent slug
+									__( 'Import Products', $this->plugin_text_domain ), //page title
+									__( 'Import Products', $this->plugin_text_domain ), //menu title
+									'manage_options', //capability
+									$this->plugin_name.'-products', //menu_slug
+									array( $this, 'zalendo_products_table' ) //callback for page content
+									);*/
+		/*
+		 * The $page_hook_suffix can be combined with the load-($page_hook) action hook
+		 * https://codex.wordpress.org/Plugin_API/Action_Reference/load-(page) 
+		 * 
+		 * The callback below will be called when the respective page is loaded
+		 */				
+		add_action( 'load-'.$html_form_page_hook1, array( $this, 'loaded_html_orders_table' ) );
+		add_action( 'load-'.$html_form_page_hook2, array( $this, 'loaded_html_client_table' ) );
+		add_action( 'load-'.$html_form_page_hook3, array( $this, 'loaded_html_products_table' ) );
+	}
+	
+	/*
+	 * Callback for the add_submenu_page action hook
+	 * 
+	 * The plugin's HTML form is loaded from here
+	 * 
+	 * @since	1.0.0
+	 */
+	public function zalendo_orders_table() {
+		if(isset($_GET['order']) && $_GET['client_id'] > 0){
+			$client_id = $_GET['client_id'];
+			//get token
+			$client_details = $this->get_token();
+			if($client_details){
+				$token = $client_details['token'];
+				$customer_orders1 = get_posts(apply_filters('woocommerce_my_account_my_orders_query', array(
+					'numberposts' => -1,
+					'post_type' => wc_get_order_types('view-orders'),
+					'post_status' => array_keys(wc_get_order_statuses())
+				)));
+				$total_records = count($customer_orders1);
+				$posts_per_page = 15;
+				$total_pages = ceil($total_records / $posts_per_page);
+				$paged = isset($_GET['number'])?$_GET['number']:'1';
+				$orders = get_posts(array(
+					'post_type' => wc_get_order_types('view-orders'),
+					'posts_per_page' => $posts_per_page,
+					'paged' => $paged,
+					'post_status' => array_keys(wc_get_order_statuses())
+				));
+				include_once( 'views/partials-html-orders-view.php' );
+				
+			}
+		}
+		elseif(isset($_GET['orderdetail']) && $_GET['order_id'] > 0 && $_GET['client_id'] > 0){
+			//get token
+			$client_details = $this->get_token();
+			if($client_details){
+				$token = $client_details['token'];
+				$order_id = $_GET['order_id'];
+				$zalando_order_id = get_post_meta( $_GET['order_id'], 'order_zalando_id', true);
+				$curl = curl_init();
+
+				curl_setopt_array($curl, array(
+				  CURLOPT_URL => 'https://api-sandbox.merchants.zalando.com/merchants/77ffa9f2-117f-4f1d-a5de-b7f044344e13/orders/'.$zalando_order_id,
+				  CURLOPT_RETURNTRANSFER => true,
+				  CURLOPT_ENCODING => '',
+				  CURLOPT_MAXREDIRS => 10,
+				  CURLOPT_TIMEOUT => 0,
+				  CURLOPT_FOLLOWLOCATION => true,
+				  CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+				  CURLOPT_CUSTOMREQUEST => 'GET',
+				  CURLOPT_POSTFIELDS => array('merchant-id' => '77ffa9f2-117f-4f1d-a5de-b7f044344e13'),
+				  CURLOPT_HTTPHEADER => array(
+					'Authorization: Bearer '.$token
+				  ),
+				));
+
+				$response = curl_exec($curl);
+				$httpcode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+				$result = json_decode($response,true);
+				curl_close($curl);
+				if($httpcode == 200 && $result['data']){
+					$orderinfo = $result['data'];
+					include_once( 'views/partials-html-orders-detail.php' );
+				}
+				else if($httpcode == 401){
+					wp_die( __( '<div class="custom-notice-error">Please update the token from the <a href="admin.php?page=' . $this->plugin_name.'-settings">Configure Client screen</a> </div>', $this->plugin_name ), __( 'Error', $this->plugin_name ), array(
+										'response' 	=> 403,
+										'back_link' => 'admin.php?page=' . $this->plugin_name.'-settings',
+
+									) );
+				}
+				else{
+					wp_die( __( '<div class="custom-notice-error">'.$result['detail'].'</div>', $this->plugin_name ), __( 'Error', $this->plugin_name ), array(
+										'response' 	=> 403,
+										'back_link' => 'admin.php?page=' . $this->plugin_name,
+
+									) );
+				}
+			}
+			else{
+				wp_die( __( '<div class="custom-notice-error">Please try once again!</div>', $this->plugin_name ), __( 'Error', $this->plugin_name ), array(
+									'response' 	=> 403,
+									'back_link' => 'admin.php?page=' . $this->plugin_name,
+
+								) );
+			}
+		}
+		else{
+			global $wpdb;
+			$tablename = $wpdb->prefix.'zalendo_credentials';
+			$result = $wpdb->get_results("SELECT * FROM ".$tablename);
+			//show the form
+			include_once( 'views/partials-html-orders-list.php' );
+		}
+	}
+	public function update_token($client_id){
+		global $wpdb;
+		$tablename = $wpdb->prefix.'zalendo_credentials';
+		$result = $wpdb->get_row("SELECT * FROM ".$tablename." WHERE id=".$client_id);
+		if($result){
+			$curl = curl_init();
+
+			curl_setopt_array($curl, array(
+			  CURLOPT_URL => 'https://api-sandbox.merchants.zalando.com/auth/token',
+			  CURLOPT_RETURNTRANSFER => true,
+			  CURLOPT_ENCODING => '',
+			  CURLOPT_MAXREDIRS => 10,
+			  CURLOPT_TIMEOUT => 0,
+			  CURLOPT_FOLLOWLOCATION => true,
+			  CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+			  CURLOPT_CUSTOMREQUEST => 'POST',
+			  CURLOPT_POSTFIELDS => 'client_id='.$result->client_id.'&client_secret='.$result->client_secret.'&grant_type=client_credentials&scope=access_token_only',
+			  CURLOPT_HTTPHEADER => array(
+				'Content-Type: application/x-www-form-urlencoded'
+			  ),
+			));
+
+			$response = curl_exec($curl);
+			$result = json_decode($response,true);
+			curl_close($curl);
+			$adate=current_time('mysql', 1);
+			$dateinsec=strtotime($adate);
+			$newdate=$dateinsec+$result['expires_in'];
+			$data_update = array(
+							'token'=>isset($result['access_token'])?$result['access_token']:'',
+							'expires_in'=>isset($result['expires_in'])?$result['expires_in']:'',
+							'expires_in_time'=>date('Y-m-d H:i:s',$newdate),
+						);
+			$data_where = array('id' => $client_id);
+			$response = $wpdb->update($tablename , $data_update, $data_where);
+			return $response;
+		}
+	}
+	public function get_token(){
+		$response = array();
+		global $wpdb;
+		$client_id = '';
+		if(isset($_POST['client_id'])){
+			$client_id = $_POST['client_id'];
+		}
+		if(isset($_GET['client_id'])){
+			$client_id = $_GET['client_id'];
+		}
+		//$client_id = isset($_GET['client_id'])?$_GET['client_id']:'';
+		$tablename = $wpdb->prefix.'zalendo_credentials';
+		$result = $wpdb->get_row("SELECT * FROM ".$tablename." WHERE id=".$client_id);
+		if($result && $result->token){
+			$response['token'] = $result->token;
+			$response['expires_in_time'] = $result->expires_in_time;
+			$response['last_sync_order_date'] = $result->last_sync_order_date;
+			return $response;
+		}
+	}
+	public function zalendo_client_table() {
+		if(isset($_GET['update_token']) && isset($_GET['client_id'])){
+			$this->update_token($_GET['client_id']);
+			$redirect_uri = admin_url('admin.php?page='. $this->plugin_name).'-settings';
+			wp_redirect( esc_url_raw( add_query_arg( array(
+									'nds_admin_add_notice' => 'success',
+									'nds_response' => array(),
+									),
+							$redirect_uri 
+					) ) );
+		}
+		//show the form
+		global $wpdb;
+		$tablename = $wpdb->prefix.'zalendo_credentials';
+		$result = $wpdb->get_results("SELECT * FROM ".$tablename);
+		include_once( 'views/partials-html-client-table.php' );
+	}
+	public function zalendo_sync(){
+		if(isset($_GET['client_id']) &&  ($_GET['client_id']> 0)){
+			$client_id = $_GET['client_id'];
+			//get token
+			$client_details = $this->get_token();
+			global $woocommerce;
+			if($client_details){
+				require($_SERVER["DOCUMENT_ROOT"].'/wp-blog-header.php');
+				$token = $client_details['token'];
+				$url = 'https://api-sandbox.merchants.zalando.com/merchants/77ffa9f2-117f-4f1d-a5de-b7f044344e13/orders';
+				if($client_details['last_sync_order_date'] != ''){
+					//$url .= '?created_after='.urlencode($client_details['last_sync_order_date']);
+				}
+				//echo $url;
+				$curl = curl_init();
+
+				curl_setopt_array($curl, array(
+				  //CURLOPT_URL => 'https://api-sandbox.merchants.zalando.com/merchants/77ffa9f2-117f-4f1d-a5de-b7f044344e13/orders',
+				  CURLOPT_URL => $url,
+				  CURLOPT_RETURNTRANSFER => true,
+				  CURLOPT_ENCODING => '',
+				  CURLOPT_MAXREDIRS => 10,
+				  CURLOPT_TIMEOUT => 0,
+				  CURLOPT_FOLLOWLOCATION => true,
+				  CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+				  CURLOPT_CUSTOMREQUEST => 'GET',
+				  CURLOPT_POSTFIELDS => array('merchant-id' => '77ffa9f2-117f-4f1d-a5de-b7f044344e13'),
+				  CURLOPT_HTTPHEADER => array(
+					'Authorization: Bearer '.$token
+				  ),
+				));
+
+				$response = curl_exec($curl);
+				$httpcode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+				$result = json_decode($response,true);
+				if($httpcode == 200){
+					if($result && $result['data']){
+						foreach($result['data'] as $key => $r){ //loop through orders
+							//add or update order
+							$args = array(
+								'status'        => 'completed', // Accepts a string: one of 'pending', 'processing', 'on-hold', 'completed', 'refunded, 'failed', 'cancelled', or a custom order status.
+								'meta_key'      => 'order_number', // Postmeta key field
+								'meta_value'    => $r['attributes']['order_number'], // Postmeta value field
+								'meta_compare'  => '=', // Possible values are ‘=’, ‘!=’, ‘>’, ‘>=’, ‘<‘, ‘<=’, ‘LIKE’, ‘NOT LIKE’, ‘IN’, ‘NOT IN’, ‘BETWEEN’, ‘NOT BETWEEN’, ‘EXISTS’ (only in WP >= 3.5), and ‘NOT EXISTS’ (also only in WP >= 3.5). Values ‘REGEXP’, ‘NOT REGEXP’ and ‘RLIKE’ were added in WordPress 3.7. Default value is ‘=’.
+								'return'        => 'ids' // Accepts a string: 'ids' or 'objects'. Default: 'objects'.
+							);
+							$orders = wc_get_orders( $args );
+							// NOT empty
+							if ( ! empty ( $orders ) ) {  
+								foreach ( $orders as $order ) {
+									//$order = new WC_Order($order);
+									//$order->update_meta_data( 'order_zalando_status', $r['attributes']['status'] );
+									update_post_meta($order,'order_zalando_status', $r['attributes']['status']);
+								}
+							}
+							else{
+								//insert ordered products to woocomerce starts
+								$product_ids = array();
+								curl_setopt_array($curl, array(
+								  CURLOPT_URL => 'https://api-sandbox.merchants.zalando.com/merchants/77ffa9f2-117f-4f1d-a5de-b7f044344e13/orders/'.$r['attributes']['order_id'].'/items',
+								  CURLOPT_RETURNTRANSFER => true,
+								  CURLOPT_ENCODING => '',
+								  CURLOPT_MAXREDIRS => 10,
+								  CURLOPT_TIMEOUT => 0,
+								  CURLOPT_FOLLOWLOCATION => true,
+								  CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+								  CURLOPT_CUSTOMREQUEST => 'GET',
+								  CURLOPT_HTTPHEADER => array(
+									'Authorization: Bearer '.$token
+								  ),
+								));
+
+								$response = curl_exec($curl);
+								$httpcode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+								$result = json_decode($response,true);
+								if($httpcode == 200){
+									if($result && $result['data']){
+										foreach($result['data'] as $response){
+											$sku = $response['attributes']['external_id'];
+											global $wpdb;
+											$product_id = $wpdb->get_var( $wpdb->prepare( "SELECT post_id FROM $wpdb->postmeta WHERE meta_key='_sku' AND meta_value='%s' LIMIT 1", $sku ) );
+											if ( $product_id ){
+												$product_ids[] = $product_id;
+											}
+											else{
+												$post_id = wp_insert_post( array( 'post_title' => $response['attributes']['description'],
+														'post_type' => 'product',
+														'post_status' => 'publish'
+													)
+												);
+												if($post_id){
+													$product_ids[] = $post_id;
+													wp_set_object_terms( $post_id, 'simple', 'product_type' ); // set product is simple/variable/grouped
+													update_post_meta( $post_id, '_visibility', 'visible' );
+													update_post_meta( $post_id, '_stock_status', 'instock');
+													update_post_meta( $post_id, 'total_sales', '0' );
+													update_post_meta( $post_id, '_downloadable', 'no' );
+													update_post_meta( $post_id, '_virtual', 'yes' );
+													update_post_meta( $post_id, '_regular_price', '' );
+													update_post_meta( $post_id, '_sale_price', '' );
+													update_post_meta( $post_id, '_purchase_note', '' );
+													update_post_meta( $post_id, '_featured', 'no' );
+													update_post_meta( $post_id, '_weight', '11' );
+													update_post_meta( $post_id, '_length', '11' );
+													update_post_meta( $post_id, '_width', '11' );
+													update_post_meta( $post_id, '_height', '11' );
+													update_post_meta( $post_id, '_sku', $sku );
+													update_post_meta( $post_id, '_product_attributes', array() );
+													update_post_meta( $post_id, '_sale_price_dates_from', '' );
+													update_post_meta( $post_id, '_sale_price_dates_to', '' );
+													//update_post_meta( $post_id, '_price', '100' );
+													update_post_meta( $post_id, '_price', $r['attributes']['order_lines_price_amount'] );
+													update_post_meta( $post_id, '_sold_individually', '' );
+													update_post_meta( $post_id, '_manage_stock', 'yes' ); // activate stock management
+													wc_update_product_stock($post_id, 100, 'set'); // set 1000 in stock
+													update_post_meta( $post_id, '_backorders', 'no' );
+												}
+											}	
+										}
+									}
+								}
+								else{
+									/*wp_die( __( '<div class="custom-notice-error 111">'.$result['detail'].'</div>', $this->plugin_name ), __( 'Error', $this->plugin_name ), array(
+										'response' 	=> 403,
+										'back_link' => 'admin.php?page=' . $this->plugin_name,
+
+									) );*/
+								}
+								//insert ordered products to woocomerce ends
+								//adding order starts
+								$ship_address = array(
+									'first_name' => $r['attributes']['shipping_address']['first_name'],
+									'last_name'  => $r['attributes']['shipping_address']['last_name'],
+									'company'    => '',
+									'email'      => $r['attributes']['customer_email'],
+									'phone'      => $r['attributes']['customer_number'],
+									'address_1'  => $r['attributes']['shipping_address']['address_line_1'],
+									'address_2'  => '',
+									'city'       => $r['attributes']['shipping_address']['city'],
+									'state'      => $r['attributes']['locale'],
+									'postcode'   => $r['attributes']['shipping_address']['zip_code'],
+									'country'    => $r['attributes']['shipping_address']['country_code']
+								);
+								$billing_address = array(
+									'first_name' => $r['attributes']['billing_address']['first_name'],
+									'last_name'  => $r['attributes']['billing_address']['last_name'],
+									'company'    => '',
+									'email'      => $r['attributes']['customer_email'],
+									'phone'      => $r['attributes']['customer_number'],
+									'address_1'  => $r['attributes']['billing_address']['address_line_1'],
+									'address_2'  => '',
+									'city'       => $r['attributes']['billing_address']['city'],
+									'state'      => $r['attributes']['locale'],
+									'postcode'   => $r['attributes']['billing_address']['zip_code'],
+									'country'    => $r['attributes']['billing_address']['country_code']
+								);
+	
+								// Now we create the order
+								$order = wc_create_order();
+								
+								// The add_product() function below is located in /plugins/woocommerce/includes/abstracts/abstract_wc_order.php
+								if(!empty($product_ids)){
+									foreach($product_ids as $pid){
+										$order->add_product( get_product( $pid ), 1); // Use the product IDs to add
+									}
+								}
+								
+								// Set addresses
+								$order->set_address( $billing_address, 'billing' );
+								$order->set_address( $ship_address, 'shipping' );
+	
+								// Set payment gateway
+								$payment_gateways = WC()->payment_gateways->payment_gateways();
+								$order->set_payment_method( $payment_gateways['bacs'] );
+								
+								// Calculate totals
+								$order->calculate_totals();
+								//$order->update_status( 'Completed', 'Imported order', TRUE);
+								$order->update_status('completed');
+								$order->update_meta_data( 'order_number', $r['attributes']['order_number'] );
+								$order->update_meta_data( 'order_zalando_id', $r['attributes']['order_id'] );
+								$order->update_meta_data( 'order_zalando_date', $r['attributes']['order_date'] );
+								$order->update_meta_data( 'order_zalando_status', $r['attributes']['status'] );
+								$order->set_date_modified($r['attributes']['order_date']);
+								$order->save();
+								//adding order ends
+								if($key == 0){
+									$last_order_date = $r['attributes']['order_date'];
+								}
+								$ordered_date = $r['attributes']['order_date'];
+								if($ordered_date > $last_order_date){
+									$last_order_date = $ordered_date;
+								}
+							}
+						}
+						if(isset($last_order_date)){
+							global $wpdb;
+							$tablename = $wpdb->prefix.'zalendo_credentials';
+							$data_update = array(
+								'last_sync_order_date'=>$last_order_date,
+							);
+							$data_where = array('id' => $client_id);
+							$response = $wpdb->update($tablename , $data_update, $data_where);
+						}
+					}
+					wp_die( __( '<div class="custom-notice-success">Great!! Orders Imported</div>', $this->plugin_name ), __( 'Error', $this->plugin_name ), array(
+									'response' 	=> 403,
+									'back_link' => 'admin.php?page=' . $this->plugin_name,
+
+								) );
+				}
+				else if($httpcode == 401){
+					wp_die( __( '<div class="custom-notice-error">Please update the token from the <a href="admin.php?page=' . $this->plugin_name.'-settings">Configure Client screen</a> </div>', $this->plugin_name ), __( 'Error', $this->plugin_name ), array(
+										'response' 	=> 403,
+										'back_link' => 'admin.php?page=' . $this->plugin_name.'-settings',
+
+									) );
+				}
+				else{
+					wp_die( __( '<div class="custom-notice-error 222">'.$result['detail'].'</div>', $this->plugin_name ), __( 'Error', $this->plugin_name ), array(
+						'response' 	=> 403,
+						'back_link' => 'admin.php?page=' . $this->plugin_name,
+
+					) );
+				}
+				curl_close($curl);
+			}
+		}
+		else{
+			global $wpdb;
+			$tablename = $wpdb->prefix.'zalendo_credentials';
+			$result = $wpdb->get_results("SELECT * FROM ".$tablename);
+			//show the form
+			include_once( 'views/sync-html-orders-list.php' );
+		}
+	}
+	public function zalendo_products_table() {
+		//show the form
+		include_once( 'views/partials-html-form-view.php' );
+	}
+	public function loaded_html_orders_table() {
+		// called when the particular page is loaded.
+	}
+	public function loaded_html_client_table() {
+		// called when the particular page is loaded.
+	}
+	public function loaded_html_products_table() {
+		// called when the particular page is loaded.
+	}
+	
+	/*
+	 * Callback for the add_submenu_page action hook
+	 * 
+	 * The plugin's HTML Ajax is loaded from here
+	 * 
+	 * @since	1.0.0
+	 */
+	public function ajax_form_page_content() {
+		include_once( 'views/partials-ajax-form-view.php' );
+	}	
+	
+	/*
+	 * Callback for the load-($html_form_page_hook)	 
+	 * Called when the plugin's submenu HTML form page is loaded
+	 * 
+	 * @since	1.0.0
+	 */
+	public function loaded_html_form_submenu_page() {
+		// called when the particular page is loaded.
+	}
+	
+	/*
+	 * Callback for the load-($ajax_form_page_hook)	 
+	 * Called when the plugin's submenu Ajax form page is loaded
+	 * 
+	 * @since	1.0.0
+	 */
+	public function loaded_ajax_form_submenu_page() {
+		// called when the particular page is loaded.		
+	}
+	
+	/**
+	 * 
+	 * @since    1.0.0
+	 */
+	public function the_form_response() {
+		
+		if( isset( $_POST['zalendo_add_user_meta_nonce'] ) && wp_verify_nonce( $_POST['zalendo_add_user_meta_nonce'], 'zalendo_add_user_meta_form_nonce') ) {
+			
+			// server processing logic
+			global $wpdb;
+			$tablename = $wpdb->prefix.'zalendo_credentials';
+			$format = array('%s','%s','%s','%s');
+			if(isset($_POST['client_id']) && !empty($_POST['client_id'])){
+				$curl = curl_init();
+
+				curl_setopt_array($curl, array(
+				  CURLOPT_URL => 'https://api-sandbox.merchants.zalando.com/auth/token',
+				  CURLOPT_RETURNTRANSFER => true,
+				  CURLOPT_ENCODING => '',
+				  CURLOPT_MAXREDIRS => 10,
+				  CURLOPT_TIMEOUT => 0,
+				  CURLOPT_FOLLOWLOCATION => true,
+				  CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+				  CURLOPT_CUSTOMREQUEST => 'POST',
+				  CURLOPT_POSTFIELDS => 'client_id='.$_POST['zalendo_client_id'].'&client_secret='.$_POST['zalendo_client_secret'].'&grant_type=client_credentials&scope=access_token_only',
+				  CURLOPT_HTTPHEADER => array(
+					'Content-Type: application/x-www-form-urlencoded'
+				  ),
+				));
+
+				$response = curl_exec($curl);
+				$result = json_decode($response,true);
+				curl_close($curl);
+				//$client_details = $this->get_token();
+				
+				$data_update = array('client_id' =>$_POST['zalendo_client_id'] ,'client_secret' => $_POST['zalendo_client_secret'],'token'=>isset($result['access_token'])?$result['access_token']:'','updated_at'=>current_time('mysql', 1));
+				$data_where = array('id' => $_POST['client_id']);
+				$result = $wpdb->update($tablename , $data_update, $data_where);
+			}
+			else{
+				$curl = curl_init();
+
+				curl_setopt_array($curl, array(
+				  CURLOPT_URL => 'https://api-sandbox.merchants.zalando.com/auth/token',
+				  CURLOPT_RETURNTRANSFER => true,
+				  CURLOPT_ENCODING => '',
+				  CURLOPT_MAXREDIRS => 10,
+				  CURLOPT_TIMEOUT => 0,
+				  CURLOPT_FOLLOWLOCATION => true,
+				  CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+				  CURLOPT_CUSTOMREQUEST => 'POST',
+				  CURLOPT_POSTFIELDS => 'client_id='.$_POST['zalendo_client_id'].'&client_secret='.$_POST['zalendo_client_secret'].'&grant_type=client_credentials&scope=access_token_only',
+				  CURLOPT_HTTPHEADER => array(
+					'Content-Type: application/x-www-form-urlencoded'
+				  ),
+				));
+
+				$response = curl_exec($curl);
+				$result = json_decode($response,true);
+				curl_close($curl);
+				$adate=current_time('mysql', 1);
+				$duration=($result['expires_in'])-120;
+				$dateinsec=strtotime($adate);
+				$newdate=$dateinsec+$duration;
+				
+				$result = $wpdb->insert( $tablename, array(
+						'client_id' => $_POST['zalendo_client_id'], 
+						'client_secret' => $_POST['zalendo_client_secret'],
+						'token'=> isset($result['access_token'])?$result['access_token']:'',
+						'expires_in'=>isset($result['expires_in'])?$result['expires_in']:'',
+						'expires_in_time'=>date('Y-m-d H:i:s',$newdate),
+						'inserted_at' => $adate, 
+						'updated_at' => $adate,
+						),$format
+					);
+			}
+			$admin_notice = "failed";
+			if($result){
+				$admin_notice = "success";
+			}
+			$redirect_uri = admin_url('admin.php?page='. $this->plugin_name).'-settings';
+
+			// server response
+			$this->custom_redirect( $admin_notice, $_POST );
+			exit;
+		}
+		else if(isset($_POST['update_client']) && isset($_POST['client_id'])){
+			global $wpdb;
+			$response = array();
+			$tablename = $wpdb->prefix.'zalendo_credentials';
+			$result = $wpdb->get_row("SELECT * FROM ".$tablename." WHERE id=".$_POST['client_id']);
+			if($result){
+				$response['client_id'] = $result->client_id;
+				$response['client_secret'] = $result->client_secret;
+			}
+			echo json_encode($response);
+			wp_die();
+		}
+		else if(isset($_POST['client_id'])){
+			global $wpdb;
+			$tablename = $wpdb->prefix.'zalendo_credentials';
+			$wpdb->delete( $tablename, array( 'id' => $_POST['client_id'] ) );
+			wp_die();
+		}			
+		else {
+			wp_die( __( 'Invalid nonce specified', $this->plugin_name ), __( 'Error', $this->plugin_name ), array(
+						'response' 	=> 403,
+						'back_link' => 'admin.php?page=' . $this->plugin_name,
+
+				) );
+		}
+	}
+
+	/**
+	 * Redirect
+	 * 
+	 * @since    1.0.0
+	 */
+	public function custom_redirect( $admin_notice, $response ) {
+		$redirect_uri = isset($response['redirect'])?$response['redirect']:admin_url('admin.php?page='. $this->plugin_name );
+		wp_redirect( esc_url_raw( add_query_arg( array(
+									'nds_admin_add_notice' => $admin_notice,
+									'nds_response' => $response,
+									),
+							$redirect_uri 
+					) ) );
+	}
+
+
+	/**
+	 * Print Admin Notices
+	 * 
+	 * @since    1.0.0
+	 */
+	public function print_plugin_admin_notices() { 
+          if ( isset( $_REQUEST['nds_admin_add_notice'] ) ) {
+			if( $_REQUEST['nds_admin_add_notice'] === "success") {
+				$html =	'<div class="notice notice-success is-dismissible"> 
+							<p><strong>The request was successful. </strong></p>';
+				//$html .= '<br><pre>' . htmlspecialchars( print_r( $_REQUEST['nds_response'], true) ) . '</pre>'
+				$html .= '</div>';
+				echo $html;
+			}
+			// handle other types of form notices
+
+		  }
+		  else {
+			  
+		  }
+
+	}
+
+
+}
